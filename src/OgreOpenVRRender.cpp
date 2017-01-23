@@ -462,3 +462,63 @@ void Annwvyn::AnnOpenVRMotionController::rumbleStop()
 {
 	vrSystem->TriggerHapticPulse(deviceIndex, vr::EVRButtonId::k_EButton_SteamVR_Touchpad - vr::k_EButton_Axis0, 0x0000);
 }
+
+Annwvyn::AnnOpenVRMotionController::HapticUpdateThread::HapticUpdateThread(vr::IVRSystem* system, vr::TrackedDeviceIndex_t deviceIndex) :
+	millisecondTimeout(2000U), period(0), duration(0), threadRunning(false), vrSystem(system), deviceIndex(deviceIndex), currentTime(0), lastPulse(0), threadStartTime(0)
+{
+}
+
+void Annwvyn::AnnOpenVRMotionController::HapticUpdateThread::start()
+{
+	if (!threadRunning)
+	{
+		threadRunning = true;
+		getTime();
+		threadStartTime = currentTime;
+		updThread = std::thread(threadMain, this);
+	}
+}
+
+void Annwvyn::AnnOpenVRMotionController::HapticUpdateThread::stop()
+{
+	threadRunning = false;
+}
+
+void Annwvyn::AnnOpenVRMotionController::HapticUpdateThread::setPeriod(unsigned int p)
+{
+	std::lock_guard<std::mutex> lock(valuesMutex);
+	period = p;
+}
+
+void Annwvyn::AnnOpenVRMotionController::HapticUpdateThread::setPulseDuration(unsigned short d)
+{
+	std::lock_guard<std::mutex> lock(valuesMutex);
+	duration = d;
+}
+
+void Annwvyn::AnnOpenVRMotionController::HapticUpdateThread::pulse()
+{
+	std::lock_guard<std::mutex> lock(valuesMutex);
+	getTime();
+
+	if (currentTime - lastPulse > long(std::max(5U, period)))
+	{
+		lastPulse = currentTime;
+		vrSystem->TriggerHapticPulse(deviceIndex, vr::EVRButtonId::k_EButton_SteamVR_Touchpad - vr::k_EButton_Axis0, duration);
+	}
+	if (currentTime - threadStartTime > long(millisecondTimeout)) threadRunning = false;
+}
+
+void Annwvyn::AnnOpenVRMotionController::HapticUpdateThread::getTime()
+{
+	currentTime = Ogre::Root::getSingleton().getTimer()->getMilliseconds();
+}
+
+void Annwvyn::AnnOpenVRMotionController::HapticUpdateThread::threadMain(HapticUpdateThread* myself)
+{
+	while (myself->threadRunning)
+	{
+		myself->pulse();
+		std::this_thread::sleep_for(std::chrono::milliseconds(2));
+	}
+}

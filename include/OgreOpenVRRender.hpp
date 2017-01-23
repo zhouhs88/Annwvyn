@@ -4,6 +4,10 @@
 #include "systemMacro.h"
 #include "OgreVRRender.hpp"
 
+#include <thread>
+#include <mutex>
+#include <algorithm>
+
 //OpenVR (HTC Vive; SteamVR) SDK
 #include <openvr.h>
 #include <openvr_capi.h>
@@ -23,12 +27,41 @@ namespace Annwvyn
 	///Specialization of AnnHandController for an OpenVR Motion Controller
 	class DLL AnnOpenVRMotionController : public AnnHandController
 	{
+		class HapticUpdateThread
+		{
+		public:
+			HapticUpdateThread(vr::IVRSystem* system, vr::TrackedDeviceIndex_t OpenVRdeviceIndex);
+
+			void start();
+			void stop();
+			void setPeriod(unsigned int p);
+			void setPulseDuration(unsigned short d);
+
+		private:
+
+			void pulse();
+			void getTime();
+			static void threadMain(HapticUpdateThread* myself);
+
+			std::thread updThread;
+			std::mutex valuesMutex;
+			const unsigned int millisecondTimeout;
+			unsigned int period;
+			unsigned short duration;
+			bool threadRunning;
+
+			vr::IVRSystem* vrSystem;
+			const vr::TrackedDeviceIndex_t deviceIndex;
+			long currentTime, lastPulse, threadStartTime;
+		};
+
 	public:
 		///Needs a pointer to the currently initialized IVRSystem, and the raw TrackedDeviceIndex of the controller
 		AnnOpenVRMotionController(vr::IVRSystem* vrsystem, vr::TrackedDeviceIndex_t OpenVRDeviceIndex, Ogre::SceneNode* handNode, AnnHandControllerID controllerID, AnnHandControllerSide controllerSide)
 			: AnnHandController("OpenVR Hand Controller", handNode, controllerID, controllerSide),
 			deviceIndex(OpenVRDeviceIndex),
-			vrSystem(vrsystem), last(0), current(0)
+			vrSystem(vrsystem), last(0), current(0),
+			hapticUpdateThread(vrSystem, deviceIndex)
 		{
 		}
 
@@ -42,6 +75,7 @@ namespace Annwvyn
 		const vr::TrackedDeviceIndex_t deviceIndex;
 		vr::IVRSystem* vrSystem;
 		long last, current;
+		HapticUpdateThread hapticUpdateThread;
 	};
 }
 
@@ -52,6 +86,7 @@ class DLL OgreOpenVRRender : public OgreVRRender
 	{
 		left, right
 	};
+
 public:
 	///Construct an OgreOpenVR object
 	OgreOpenVRRender(std::string windowName = "OgreOpenVRRender");
